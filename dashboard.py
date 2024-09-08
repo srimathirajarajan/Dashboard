@@ -3,6 +3,7 @@ import pandas as pd
 import plotly.express as px
 import snowflake.connector
 
+# Page configuration
 st.set_page_config(
     page_title="Analytics Dashboard",
     page_icon="📊",
@@ -10,28 +11,34 @@ st.set_page_config(
     initial_sidebar_state="expanded"
 )
 
-# Custom CSS to style the KPI boxes and dashboard with hover effect
+# Custom CSS to style the KPI boxes and dashboard with hover effects, including a blue border on hover
 st.markdown(
     """
     <style>
+    @import url('https://fonts.googleapis.com/css2?family=Poppins:wght@300;400;600&display=swap');
+    html, body {
+        font-family: 'Poppins', sans-serif;
+        background-color: #f8f9fd;
+    }
     .kpi-box {
-        background-color: #ffffff;
+        background: linear-gradient(145deg, #e6f7ff, #ffffff);
         padding: 20px;
-        border-radius: 10px;
-        box-shadow: 0px 4px 15px rgba(0, 0, 0, 0.1);
+        border-radius: 15px;
+        box-shadow: 0px 5px 15px rgba(0, 0, 0, 0.05);
         text-align: center;
         margin-bottom: 20px;
-        transition: border-color 0.3s ease;
+        transition: transform 0.3s ease, box-shadow 0.3s ease, border 0.3s ease;
         border: 2px solid transparent;
     }
     .kpi-box:hover {
-        border-color: #2596BE; /* Blue color on hover */
+        transform: translateY(-5px);
+        box-shadow: 0px 8px 20px rgba(0, 0, 0, 0.1);
+        border-color: #2596BE;  /* Blue border on hover */
     }
     .kpi-label {
         font-size: 1.2em;
         color: #333333;
         font-weight: bold;
-        margin-bottom: 10px;
     }
     .kpi-value {
         font-size: 2.5em;
@@ -53,6 +60,7 @@ st.markdown(
     unsafe_allow_html=True
 )
 
+# Snowflake connection
 conn = snowflake.connector.connect(
     user='SRIMATHI',
     password='Shri@1608',
@@ -129,9 +137,23 @@ GROUP BY age_group
 """
 df_age_group_distribution = run_query(age_group_distribution_query)
 
+# New Query for Upcoming Appointments This Month
+upcoming_appointments_query = """
+SELECT COUNT(DISTINCT pd.PATIENT_DETAILS:patient_id::int) AS patient_count
+FROM PATIENT_DETAILS pd
+JOIN UPCOMING_APPOINTMENTS ua
+  ON pd.PATIENT_DETAILS:patient_id = ua.UPCOMING_APPOINTMENTS:patient_id,
+  LATERAL FLATTEN(input => ua.UPCOMING_APPOINTMENTS:upcoming_appointments) appt
+WHERE EXTRACT(MONTH FROM TO_DATE(appt.value:date::string, 'YYYY-MM-DD')) = EXTRACT(MONTH FROM CURRENT_DATE())
+  AND EXTRACT(YEAR FROM TO_DATE(appt.value:date::string, 'YYYY-MM-DD')) = EXTRACT(YEAR FROM CURRENT_DATE());
+"""
+df_upcoming_appointments = run_query(upcoming_appointments_query)
+
+# KPI Values
 total_patients_kpi = df_gender_distribution['COUNT'].sum()
-total_admission_kpi = df_admission['COUNT'].iloc[0] 
+total_admission_kpi = df_admission['COUNT'].iloc[0]
 total_doctors_kpi = df_doctors['COUNT'].iloc[0]
+upcoming_appointments_kpi = df_upcoming_appointments['PATIENT_COUNT'].iloc[0]
 
 constant_color_theme = ['#2596BE']
 
@@ -202,7 +224,7 @@ st.markdown("<h1 style='text-align: center; margin-top: 0rem;'>Analytics Dashboa
 
 # Center the KPIs in separate boxes
 st.markdown("<div style='display: flex; justify-content: center;'>", unsafe_allow_html=True)
-kpi_column1, kpi_column2, kpi_column3 = st.columns(3)
+kpi_column1, kpi_column2, kpi_column3, kpi_column4 = st.columns(4)
 
 with kpi_column1:
     st.markdown(f"""
@@ -228,17 +250,26 @@ with kpi_column3:
     </div>
     """, unsafe_allow_html=True)
 
+with kpi_column4:
+    st.markdown(f"""
+    <div class="kpi-box">
+        <div class="kpi-label">Upcoming Appointments</div>
+        <div class="kpi-value">{upcoming_appointments_kpi}</div>
+    </div>
+    """, unsafe_allow_html=True)
+
 st.markdown("</div>", unsafe_allow_html=True)
 
-# Main layout: Left and right columns for charts
-left_column, right_column = st.columns([1, 2])
-
-with left_column:
+# Add charts to layout
+col1, col2 = st.columns(2)
+with col1:
     st.plotly_chart(gender_donut_chart, use_container_width=True)
     st.plotly_chart(age_donut_chart, use_container_width=True)
-
-with right_column:
-    col1, col2 = st.columns(2)
-    col1.plotly_chart(surgeries_bubble_chart, use_container_width=True)
-    col2.plotly_chart(medications_line_chart, use_container_width=True)
+with col2:
     st.plotly_chart(admission_outcome_bar_chart, use_container_width=True)
+    st.plotly_chart(surgeries_bubble_chart, use_container_width=True)
+
+st.plotly_chart(medications_line_chart, use_container_width=True)
+
+# Closing Snowflake connection
+conn.close()
